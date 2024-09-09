@@ -1,0 +1,96 @@
+# Install necessary packages
+install.packages(c("nlme", "ggplot2", "dplyr"))
+
+# Load libraries
+library(nlme)       # For nonlinear mixed-effects modeling
+library(ggplot2)    # For plotting
+library(dplyr)      # For data manipulation
+
+# Example PK dataset
+# Suppose `pk_data` is a data frame with columns: ID, Time, Concentration, Dose, and Covariate
+
+# Generate example data (if you don't have a dataset)
+set.seed(123)
+pk_data <- data.frame(
+  ID = rep(1:10, each = 10),        # 10 subjects, 10 time points each
+  Time = rep(seq(0, 24, length.out = 10), 10),  # Time points (0 to 24 hours)
+  Concentration = rep(NA, 100),     # Placeholder for concentration data
+  Dose = rep(100, 100),             # Constant dose (100 mg)
+  Covariate = rep(rnorm(10), each = 10)  # Random covariate (e.g., body weight)
+)
+
+# Simulate PK data (e.g., one-compartment model)
+ka <- 1.2     # Absorption rate constant
+ke <- 0.3     # Elimination rate constant
+V <- 10       # Volume of distribution
+
+for (i in 1:10) {
+  dose <- pk_data$Dose[pk_data$ID == i]
+  time <- pk_data$Time[pk_data$ID == i]
+  pk_data$Concentration[pk_data$ID == i] <- (dose / V) * exp(-ke * time)
+}
+
+# Plot the PK data
+ggplot(pk_data, aes(x = Time, y = Concentration, group = ID)) +
+  geom_line(aes(color = as.factor(ID))) +
+  labs(title = "Simulated PK Data", x = "Time (hours)", y = "Concentration (mg/L)")
+
+# Nonlinear mixed-effects model
+# Here we fit a simple one-compartment model: C(t) = (Dose/V) * exp(-ke * t)
+
+pk_model <- nlme(
+  Concentration ~ (Dose/V) * exp(-ke * Time),
+  data = pk_data,
+  fixed = list(ke + V ~ 1),
+  random = ke ~ 1 | ID,  # Random effect on ke
+  start = list(fixed = c(ke = 0.3, V = 10))
+)
+
+# Summary of the model
+summary(pk_model)
+
+# Predicted concentrations
+pk_data$Predicted <- predict(pk_model)
+
+# Plot the observed vs. predicted concentrations
+ggplot(pk_data, aes(x = Time)) +
+  geom_line(aes(y = Concentration, color = "Observed")) +
+  geom_line(aes(y = Predicted, color = "Predicted")) +
+  facet_wrap(~ ID) +
+  labs(title = "Observed vs. Predicted Concentrations", y = "Concentration (mg/L)") +
+  scale_color_manual(name = "Legend", values = c("Observed" = "blue", "Predicted" = "red"))
+
+# Example PD dataset
+# Suppose `pd_data` is a data frame with columns: ID, Concentration, Response, and Covariate
+
+# Generate example PD data
+pd_data <- pk_data %>%
+  mutate(Response = 1 / (1 + exp(-0.1 * (Concentration - 10))) + rnorm(100, sd = 0.05))  # Emax model
+
+# Plot the PD data
+ggplot(pd_data, aes(x = Concentration, y = Response, group = ID)) +
+  geom_point(aes(color = as.factor(ID))) +
+  labs(title = "Simulated PD Data", x = "Concentration (mg/L)", y = "Response")
+
+# Fit a nonlinear mixed-effects model for PD data (Emax model)
+pd_model <- nlme(
+  Response ~ Emax * Concentration / (EC50 + Concentration),
+  data = pd_data,
+  fixed = list(Emax + EC50 ~ 1),
+  random = Emax ~ 1 | ID,  # Random effect on Emax
+  start = list(fixed = c(Emax = 1, EC50 = 10))
+)
+
+# Summary of the model
+summary(pd_model)
+
+# Predicted responses
+pd_data$Predicted_Response <- predict(pd_model)
+
+# Plot observed vs. predicted responses
+ggplot(pd_data, aes(x = Concentration)) +
+  geom_point(aes(y = Response, color = "Observed")) +
+  geom_line(aes(y = Predicted_Response, color = "Predicted")) +
+  facet_wrap(~ ID) +
+  labs(title = "Observed vs. Predicted PD Responses", y = "Response") +
+  scale_color_manual(name = "Legend", values = c("Observed" = "blue", "Predicted" = "red"))
